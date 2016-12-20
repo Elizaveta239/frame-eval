@@ -1,7 +1,10 @@
 from debugger.pydev_debug_info import Debugger
+import os
+
+filename = os.path.abspath(__file__)
 
 debugger = Debugger()
-debugger.add_breakpoint('/home/user/work/frame-eval/main.py', 12)
+debugger.add_breakpoint(filename, 14)
 debugger.run()
 
 
@@ -9,8 +12,7 @@ def foo():
     a = 1
     b = 2
     c = 3
-    d = 4
-    return a + b + c + d
+    return a + b + c
 
 
 foo()
