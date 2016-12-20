@@ -1,6 +1,6 @@
 import sys
 
-ignore_list = ['debug_info.py', 'modify_bytecode.py']
+ignore_list = ['pydev_debug_info.py', 'pydev_modify_bytecode.py']
 
 
 class GlobalDebuggerHolder:
@@ -30,12 +30,14 @@ class Debugger(object):
         print(frame.f_code.co_filename, frame.f_lineno, frame.f_locals)
 
     def add_breakpoint(self, filename, line):
-        self.breakpoints[filename] = line
+        if filename not in self.breakpoints.keys():
+            self.breakpoints[filename] = []
+        self.breakpoints[filename].append(line)
 
-    def get_breakpoints(self):
-        return self.breakpoints
+    def get_breakpoints_for_file(self, filename):
+        return self.breakpoints.get(filename, [])
 
     def run(self):
-        import frame
         # Set frame evaluation function after debugger initialization
+        import frame
         frame.main(trace.__code__)
