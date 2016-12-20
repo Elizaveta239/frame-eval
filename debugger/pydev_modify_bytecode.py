@@ -33,16 +33,17 @@ def insert_code(code_to_modify, code_to_insert, before_line):
     :return: modified code
     """
     linestarts = dict(dis.findlinestarts(code_to_modify))
-    abs_after_line = code_to_modify.co_firstlineno + before_line
+    if before_line not in linestarts.values():
+        return code_to_modify
     offset = None
     for off, line_no in linestarts.items():
-        if line_no == abs_after_line:
+        if line_no == before_line:
             offset = off
 
     code_insert, new_names = _modify_co_names_for_debugger(code_to_modify, code_to_insert)
     new_bytes = code_to_modify.co_code[:offset] + code_insert + code_to_modify.co_code[offset:]
 
-    new_lnotab = _modify_new_lines(code_to_modify, code_insert, before_line)
+    new_lnotab = _modify_new_lines(code_to_modify, code_insert, before_line - code_to_modify.co_firstlineno)
 
     new_code = CodeType(
         code_to_modify.co_argcount,  # integer
