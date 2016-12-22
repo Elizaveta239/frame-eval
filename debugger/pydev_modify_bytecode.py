@@ -4,14 +4,15 @@ from types import CodeType
 
 def _modify_co_names_for_debugger(orig_code, insert_code):
     """
-    Modify co_names for using `debugger` and `call_trace` in the correct place
-    This function should be rewritten in a more common way!
+    Modify co_names for using correct variable names
     """
     orig_names_len = len(orig_code.co_names)
-    code_with_new_names = list(insert_code.co_code[:6])  # remove `return` commands from function bytecode
-    code_with_new_names[1] = orig_names_len  # Load `debugger` name
-    code_with_new_names[3] = orig_names_len + 1  # Load `call_trace` name
+    code_with_new_names = list(insert_code.co_code[:-4])  # remove LOAD_CONST 0 and RETURN_VALUE instructions
+    # from function bytecode
     new_names = orig_code.co_names + insert_code.co_names
+    # insert variable's names into new code object
+    for i in range(0, len(insert_code.co_names)):
+        code_with_new_names[i * 2 + 1] = orig_names_len + i
     return bytes(code_with_new_names), new_names
 
 
@@ -20,6 +21,33 @@ def _modify_new_lines(code_to_modify, code_insert, before_line):
     if before_line * 2 < len(new_list):
         new_list[before_line * 2] += len(code_insert)
     return bytes(new_list)
+
+
+def _modify_labels(code_obj, offset_of_inserted_code, size_of_inserted_code):
+    """
+    Update labels for the relative jump targets
+    :param code_obj: code to modify
+    :param offset_of_inserted_code: offset for the inserted code
+    :param offset_of_inserted_code: size of the inserted code
+    :return: bytes sequence with modified labels
+    """
+    offsets_for_modification = dict()
+    for offset, op, arg in dis._unpack_opargs(code_obj):
+        if arg is not None:
+            if op in dis.hasjrel:
+                label = offset + 2 + arg
+            elif op in dis.hasjabs:
+                label = arg
+            else:
+                continue
+            if label >= offset_of_inserted_code:
+                offsets_for_modification[offset] = label
+    code_list = list(code_obj)
+    for i in range(0, len(code_obj), 2):
+        op = code_list[i]
+        if i in offsets_for_modification and op >= dis.HAVE_ARGUMENT:
+            code_list[i+1] += size_of_inserted_code
+    return bytes(code_list)
 
 
 def insert_code(code_to_modify, code_to_insert, before_line):
@@ -41,7 +69,8 @@ def insert_code(code_to_modify, code_to_insert, before_line):
             offset = off
 
     code_insert, new_names = _modify_co_names_for_debugger(code_to_modify, code_to_insert)
-    new_bytes = code_to_modify.co_code[:offset] + code_insert + code_to_modify.co_code[offset:]
+    modified_code = _modify_labels(code_to_modify.co_code, offset, len(code_insert))
+    new_bytes = modified_code[:offset] + code_insert + modified_code[offset:]
 
     new_lnotab = _modify_new_lines(code_to_modify, code_insert, before_line - code_to_modify.co_firstlineno)
 
