@@ -46,7 +46,7 @@ def _modify_labels(code_obj, offset_of_inserted_code, size_of_inserted_code):
     for i in range(0, len(code_obj), 2):
         op = code_list[i]
         if i in offsets_for_modification and op >= dis.HAVE_ARGUMENT:
-            code_list[i+1] += size_of_inserted_code
+            code_list[i + 1] += size_of_inserted_code
     return bytes(code_list)
 
 
