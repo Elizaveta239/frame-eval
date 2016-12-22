@@ -49,7 +49,7 @@ cdef extern from "Python.h":
     object PyObject_GetAttrString(object o, char *attr_name)
 
 cdef extern from "pystate.h":
-    ctypedef object (*_PyFrameEvalFunction)(PyFrameObject *frame, int exc)
+    ctypedef PyObject* _PyFrameEvalFunction(PyFrameObject *frame, int exc)
 
     ctypedef struct PyInterpreterState:
         PyInterpreterState *next

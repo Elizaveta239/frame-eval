@@ -4,7 +4,7 @@ import dis
 
 trace_code = None
 
-cdef object get_bytecode_while_frame_eval(PyFrameObject *frame, int exc):
+cdef PyObject* get_bytecode_while_frame_eval(PyFrameObject *frame, int exc):
     filename = str(<object> frame.f_code.co_filename)
     skip_file = False
     for skip_filename in ignore_list:
@@ -20,7 +20,7 @@ cdef object get_bytecode_while_frame_eval(PyFrameObject *frame, int exc):
                 if line in breakpoints:
                     new_code = insert_code(<object> frame.f_code, trace_code, line)
                     frame.f_code = <PyCodeObject *> new_code
-    return <object> _PyEval_EvalFrameDefault(frame, exc)
+    return _PyEval_EvalFrameDefault(frame, exc)
 
 def main(my_trace_code):
     global trace_code
