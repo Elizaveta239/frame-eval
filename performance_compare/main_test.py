@@ -5,30 +5,38 @@ import time
 
 filename = os.path.abspath(__file__)
 
-debugger = Debugger(False)
-# debugger = TracingDebugger(False)
-debugger.add_breakpoint(filename, 27)
-debugger.run()
 
-start = time.time()
-
-
-def conact_with_space(str1, str2):
-    res = str1 + " "
-    res = res + str2
-    return res
+# The main performance test from the issue PY-14286
 
 
 def foo():
-    sum = ""
-    sum_int = 0
-    for i in range(50000):
-        sum = conact_with_space(sum, str(i))
-        sum_int += i
-    return sum
+    # do some busy work in parallel
+    print("Started main task")
+    x = 0
+    for i in range(10000000):
+        x += 1
+    print("Completed main task")
 
 
-foo()
+def time_running(text):
+    start = time.time()
+    foo()
+    finish = time.time()
+    print(text, finish - start)
 
-finish = time.time()
-print("Time spend:", finish - start)
+
+time_running("Time without debugging: ")
+
+tracing_debugger = TracingDebugger(False)
+tracing_debugger.add_breakpoint(filename, 15)
+tracing_debugger.run()
+
+time_running("Time with debugger based on sys.settrace(): ")
+tracing_debugger.stop()
+
+debugger = Debugger(False)
+debugger.add_breakpoint(filename, 15)
+debugger.run()
+
+time_running("Time with debugger based on frame evaluation: ")
+debugger.stop()
