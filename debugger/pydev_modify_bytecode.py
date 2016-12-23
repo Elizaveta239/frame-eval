@@ -31,17 +31,18 @@ def _modify_labels(code_obj, offset_of_inserted_code, size_of_inserted_code):
     :param offset_of_inserted_code: size of the inserted code
     :return: bytes sequence with modified labels
     """
-    offsets_for_modification = dict()
+    offsets_for_modification = []
     for offset, op, arg in dis._unpack_opargs(code_obj):
         if arg is not None:
             if op in dis.hasjrel:
                 label = offset + 2 + arg
+                if offset <= offset_of_inserted_code <= label:
+                    # change labels for relative jump targets if code was inserted inside
+                    offsets_for_modification.append(offset)
             elif op in dis.hasjabs:
-                label = arg
-            else:
-                continue
-            if label >= offset_of_inserted_code:
-                offsets_for_modification[offset] = label
+                # change label for absolute jump if code was inserted before it
+                if offset_of_inserted_code <= arg:
+                    offsets_for_modification.append(offset)
     code_list = list(code_obj)
     for i in range(0, len(code_obj), 2):
         op = code_list[i]
