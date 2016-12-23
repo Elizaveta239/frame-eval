@@ -1,5 +1,5 @@
 from debugger.pydev_modify_bytecode import insert_code
-from debugger.pydev_debug_info import get_global_debugger, ignore_list
+from debugger.pydev_debugger import get_global_debugger, ignore_list
 import dis
 
 trace_code = None
@@ -27,3 +27,7 @@ def main(my_trace_code):
     trace_code = my_trace_code
     cdef PyThreadState *state = PyThreadState_Get()
     state.interp.eval_frame = get_bytecode_while_frame_eval
+
+def stop_frame_eval():
+    cdef PyThreadState *state = PyThreadState_Get()
+    state.interp.eval_frame = _PyEval_EvalFrameDefault
