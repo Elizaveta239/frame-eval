@@ -1,4 +1,4 @@
-from debugger.pydev_debug_info import Debugger
+from debugger.pydev_debug_info import FrameDebugger
 from performance_compare.tracing_debugger import TracingDebugger
 import os
 import time
@@ -22,7 +22,7 @@ def time_running(text):
     start = time.time()
     foo()
     finish = time.time()
-    print(text, finish - start)
+    print(text, finish - start, "\n")
 
 
 time_running("Time without debugging: ")
@@ -34,7 +34,7 @@ tracing_debugger.run()
 time_running("Time with debugger based on sys.settrace(): ")
 tracing_debugger.stop()
 
-debugger = Debugger(False)
+debugger = FrameDebugger(False)
 debugger.add_breakpoint(filename, 15)
 debugger.run()
 

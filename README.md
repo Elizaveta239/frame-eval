@@ -6,6 +6,8 @@ An experimental debugger for using new frame evaluation API.
 Use `python setup.py build_ext --inplace` to compile`frame` module inside the
 project directory.
 
+The most important performance compare is in the `performance_compare/main_test.py`
+
 Example of usage (from `main.py`):
 
 ```

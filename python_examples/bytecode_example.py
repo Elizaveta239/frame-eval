@@ -1,8 +1,8 @@
 import dis
 from debugger.pydev_modify_bytecode import insert_code
-from debugger.pydev_debug_info import Debugger
+from debugger.pydev_debug_info import FrameDebugger
 
-debugger = Debugger()
+debugger = FrameDebugger()
 
 
 def foo():

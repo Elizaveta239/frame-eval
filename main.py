@@ -1,9 +1,9 @@
-from debugger.pydev_debug_info import Debugger
+from debugger.pydev_debug_info import FrameDebugger
 import os
 
 filename = os.path.abspath(__file__)
 
-debugger = Debugger()
+debugger = FrameDebugger()
 debugger.add_breakpoint(filename, 15)
 debugger.add_breakpoint(filename, 21)
 debugger.run()
