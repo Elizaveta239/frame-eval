@@ -16,10 +16,11 @@ def _modify_co_names_for_debugger(orig_code, insert_code):
     return bytes(code_with_new_names), new_names
 
 
-def _modify_new_lines(code_to_modify, code_insert, before_line):
+def _modify_new_lines(code_to_modify, code_insert, before_line_offset):
     new_list = list(code_to_modify.co_lnotab)
-    if before_line * 2 < len(new_list):
-        new_list[before_line * 2] += len(code_insert)
+    for i in range(0, len(new_list), 2):
+        if new_list[i] == before_line_offset and (i + 2) < len(new_list):
+            new_list[i + 2] += len(code_insert)
     return bytes(new_list)
 
 
@@ -73,7 +74,7 @@ def insert_code(code_to_modify, code_to_insert, before_line):
     modified_code = _modify_labels(code_to_modify.co_code, offset, len(code_insert))
     new_bytes = modified_code[:offset] + code_insert + modified_code[offset:]
 
-    new_lnotab = _modify_new_lines(code_to_modify, code_insert, before_line - code_to_modify.co_firstlineno)
+    new_lnotab = _modify_new_lines(code_to_modify, code_insert, offset)
 
     new_code = CodeType(
         code_to_modify.co_argcount,  # integer
