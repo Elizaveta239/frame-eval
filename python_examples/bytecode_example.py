@@ -1,8 +1,8 @@
-import dis
+import dis_copy as dis
 from debugger.pydev_modify_bytecode import insert_code
 from debugger.pydev_debug_info import FrameDebugger
 
-debugger = FrameDebugger()
+my_debugger = FrameDebugger()
 
 
 def foo():
@@ -14,7 +14,9 @@ def foo():
 
 
 def trace():
-    debugger.call_trace()
+    from debugger.pydev_debugger import get_global_debugger
+    deb = get_global_debugger()
+    deb.call_trace()
 
 
 code = foo.__code__

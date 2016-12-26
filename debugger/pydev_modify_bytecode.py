@@ -2,18 +2,27 @@ import dis
 from types import CodeType
 
 
-def _modify_co_names_for_debugger(orig_code, insert_code):
+def _modify_code_arguments(original_code, insert_code, insert_code_obj, attr, op_list):
     """
-    Modify co_names for using correct variable names
+    Modify arguments for some code attributes. This function append values of the inserted code to the original values,
+     and changes indexes inside inserted code. So it helps to avoid variables mixing between two pieces of code
+
+    :param original_code: code to modify
+    :param insert_code: code to insert
+    :param insert_code_obj: bytes sequence of inserted code, which should be modified too
+    :param attr: name of attribute ('co_names', 'co_consts' or 'co_varnames')
+    :param op_list: sequence of bytecodes whose arguments should be changed
+    :return:
     """
-    orig_names_len = len(orig_code.co_names)
-    code_with_new_names = list(insert_code.co_code[:-4])  # remove LOAD_CONST 0 and RETURN_VALUE instructions
-    # from function bytecode
-    new_names = orig_code.co_names + insert_code.co_names
-    # insert variable's names into new code object
-    for i in range(0, len(insert_code.co_names)):
-        code_with_new_names[i * 2 + 1] = orig_names_len + i
-    return bytes(code_with_new_names), new_names
+    orig_value = getattr(original_code, attr)
+    insert_value = getattr(insert_code, attr)
+    orig_names_len = len(orig_value)
+    code_with_new_values = list(insert_code_obj)
+    for offset, op, arg in dis._unpack_opargs(insert_code_obj):
+        if op in op_list:
+            code_with_new_values[offset + 1] += orig_names_len
+    new_values = orig_value + insert_value
+    return bytes(code_with_new_values), new_values
 
 
 def _modify_new_lines(code_to_modify, code_insert, before_line_offset):
@@ -70,22 +79,28 @@ def insert_code(code_to_modify, code_to_insert, before_line):
         if line_no == before_line:
             offset = off
 
-    code_insert, new_names = _modify_co_names_for_debugger(code_to_modify, code_to_insert)
-    modified_code = _modify_labels(code_to_modify.co_code, offset, len(code_insert))
-    new_bytes = modified_code[:offset] + code_insert + modified_code[offset:]
+    code_to_insert_obj = code_to_insert.co_code[:-4]
+    code_to_insert_obj, new_names = _modify_code_arguments(code_to_modify, code_to_insert, code_to_insert_obj,
+                                                           'co_names', dis.hasname)
+    code_to_insert_obj, new_consts = _modify_code_arguments(code_to_modify, code_to_insert, code_to_insert_obj,
+                                                            'co_consts', [100])
+    code_to_insert_obj, new_vars = _modify_code_arguments(code_to_modify, code_to_insert, code_to_insert_obj,
+                                                          'co_varnames', dis.haslocal)
+    modified_code = _modify_labels(code_to_modify.co_code, offset, len(code_to_insert_obj))
+    new_bytes = modified_code[:offset] + code_to_insert_obj + modified_code[offset:]
 
-    new_lnotab = _modify_new_lines(code_to_modify, code_insert, offset)
+    new_lnotab = _modify_new_lines(code_to_modify, code_to_insert_obj, offset)
 
     new_code = CodeType(
         code_to_modify.co_argcount,  # integer
         code_to_modify.co_kwonlyargcount,  # integer
-        code_to_modify.co_nlocals,  # integer
+        len(new_vars),  # integer
         code_to_modify.co_stacksize,  # integer
         code_to_modify.co_flags,  # integer
         new_bytes,  # bytes
-        code_to_modify.co_consts,  # tuple
+        new_consts,  # tuple
         new_names,  # tuple
-        code_to_modify.co_varnames,  # tuple
+        new_vars,  # tuple
         code_to_modify.co_filename,  # string
         code_to_modify.co_name,  # string
         code_to_modify.co_firstlineno,  # integer
