@@ -1,5 +1,5 @@
 from debugger.pydev_modify_bytecode import insert_code
-from debugger.pydev_debugger import get_global_debugger, ignore_list
+from debugger.pydev_debugger import get_global_debugger, ignore_list, trace_wrapper
 import dis
 
 trace_code = None
@@ -18,13 +18,11 @@ cdef PyObject* get_bytecode_while_frame_eval(PyFrameObject *frame, int exc):
         if breakpoints:
             for offset, line in dis.findlinestarts(<object> frame.f_code):
                 if line in breakpoints:
-                    new_code = insert_code(<object> frame.f_code, trace_code, line)
+                    new_code = insert_code(<object> frame.f_code, trace_wrapper.__code__, line)
                     frame.f_code = <PyCodeObject *> new_code
     return _PyEval_EvalFrameDefault(frame, exc)
 
-def main(my_trace_code):
-    global trace_code
-    trace_code = my_trace_code
+def main():
     cdef PyThreadState *state = PyThreadState_Get()
     state.interp.eval_frame = get_bytecode_while_frame_eval
 

@@ -15,8 +15,13 @@ def set_global_debugger(dbg):
 
 
 def trace():
-    global debugger
+    debugger = get_global_debugger()
     debugger.call_trace()
+
+
+def trace_wrapper():
+    import debugger.pydev_debugger
+    debugger.pydev_debugger.trace()
 
 
 class BaseDebugger(object):

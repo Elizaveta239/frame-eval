@@ -8,14 +8,14 @@ class FrameDebugger(BaseDebugger):
         set_global_debugger(self)
 
     def call_trace(self):
-        frame = sys._getframe(1)
+        frame = sys._getframe(2)
         if self.show_debug_info:
             print(frame.f_code.co_filename, frame.f_lineno, frame.f_locals)
 
     def run(self):
         # Set frame evaluation function after debugger initialization
         import frame
-        frame.main(trace.__code__)
+        frame.main()
 
     def stop(self):
         import frame
