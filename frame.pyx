@@ -1,5 +1,5 @@
 from debugger.pydev_modify_bytecode import insert_code
-from debugger.pydev_debugger import get_global_debugger, ignore_list, trace_wrapper
+from debugger.pydev_debugger import get_global_debugger, ignore_list, trace_wrapper, update_globals_dict
 import dis
 
 trace_code = None
@@ -16,10 +16,14 @@ cdef PyObject* get_bytecode_while_frame_eval(PyFrameObject *frame, int exc):
         debugger = get_global_debugger()
         breakpoints = debugger.get_breakpoints_for_file(filename)
         if breakpoints:
+            was_break = False
             for offset, line in dis.findlinestarts(<object> frame.f_code):
                 if line in breakpoints:
+                    was_break = True
                     new_code = insert_code(<object> frame.f_code, trace_wrapper.__code__, line)
                     frame.f_code = <PyCodeObject *> new_code
+            if was_break:
+                update_globals_dict(<object> frame.f_globals)
     return _PyEval_EvalFrameDefault(frame, exc)
 
 def main():

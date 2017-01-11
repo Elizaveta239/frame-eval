@@ -1,4 +1,3 @@
-
 ignore_list = ['pydev_debug_info.py', 'pydev_modify_bytecode.py', 'pydev_debugger.py', 'dis.py']
 
 
@@ -19,9 +18,14 @@ def trace():
     debugger.call_trace()
 
 
+def update_globals_dict(globals_dict):
+    new_globals = {'trace': trace}
+    globals_dict.update(new_globals)
+
+
 def trace_wrapper():
-    import debugger.pydev_debugger
-    debugger.pydev_debugger.trace()
+    global trace
+    trace()
 
 
 class BaseDebugger(object):

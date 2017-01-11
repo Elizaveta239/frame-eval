@@ -13,14 +13,13 @@ def foo():
     print("finish!'")
 
 
-def trace():
-    from debugger.pydev_debugger import get_global_debugger
-    deb = get_global_debugger()
-    deb.call_trace()
+def my_trace():
+    from debugger.pydev_debugger import trace_wrapper
+    trace_wrapper()
 
 
 code = foo.__code__
-code2 = trace.__code__
+code2 = my_trace.__code__
 new_code = insert_code(code, code2, 11)
 
 print("New code:")

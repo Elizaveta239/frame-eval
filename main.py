@@ -5,7 +5,7 @@ filename = os.path.abspath(__file__)
 
 debugger = FrameDebugger()
 debugger.add_breakpoint(filename, 15)
-debugger.add_breakpoint(filename, 21)
+debugger.add_breakpoint(filename, 22)
 debugger.run()
 
 
@@ -18,9 +18,10 @@ def bar():
 def foo():
     a = 1
     b = 2
-    c = 3
+    for i in range(3):
+        print(f"foo {i}")
     bar()
-    return a + b + c
+    return a + b
 
 
 foo()
