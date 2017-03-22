@@ -101,6 +101,8 @@ def _update_label_offsets(code_obj, offset_of_inserted_code, size_of_inserted_co
                     code_to_insert.put((i, 4, arg >> 8))
                     if original_offset == i + 2:
                         original_offset += 4
+                    elif original_offset == i:
+                        original_offset -= 4
 
         code_obj = bytes(code_list)
 
