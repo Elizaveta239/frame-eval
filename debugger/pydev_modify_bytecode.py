@@ -50,11 +50,13 @@ def _modify_new_lines(code_to_modify, all_inserted_code):
             if prev_abs_offset <= inserted_offset < abs_offset:
                 if new_list[i] + all_inserted_code[inserted_offset] > MAX_BYTE:
                     raise ValueError("Bad number of arguments")
-                new_list[i] += all_inserted_code[inserted_offset]
+                size_of_inserted = all_inserted_code[inserted_offset]
+                new_list[i] += size_of_inserted
+                abs_offset += size_of_inserted
     return bytes(new_list)
 
 
-def _update_label_offsets(code_obj, offset_of_inserted_code, breakpoint_code_list):
+def _update_label_offsets(code_obj, breakpoint_offset, breakpoint_code_list):
     """
     Update labels for the relative and absolute jump targets
     :param code_obj: code to modify
@@ -63,16 +65,16 @@ def _update_label_offsets(code_obj, offset_of_inserted_code, breakpoint_code_lis
     :return: bytes sequence with modified labels
     """
     pieces_of_code_to_insert = Queue()
-    pieces_of_code_to_insert.put((offset_of_inserted_code, breakpoint_code_list))
+    pieces_of_code_to_insert.put((breakpoint_offset, breakpoint_code_list))
     # During offsets updating one of them can become > max byte value. In this case we need to insert the new operator and
     # update arguments for relative and absolute jumps again. We will use this queue for saving pieces of code which should be
     # inserted into the code by turns.
     all_inserted_code = dict()
-    all_inserted_code[offset_of_inserted_code] = len(breakpoint_code_list)
+    all_inserted_code[breakpoint_offset] = len(breakpoint_code_list)
     code_list = list(code_obj)
 
     while not pieces_of_code_to_insert.empty():
-        current_offset, inserted_code_list = pieces_of_code_to_insert.get()
+        current_offset, current_code_list = pieces_of_code_to_insert.get()
         offsets_for_modification = []
 
         for offset, op, arg in dis._unpack_opargs(code_list):
@@ -90,7 +92,7 @@ def _update_label_offsets(code_obj, offset_of_inserted_code, breakpoint_code_lis
         for i in range(0, len(code_list), 2):
             op = code_list[i]
             if i in offsets_for_modification and op >= dis.HAVE_ARGUMENT:
-                new_arg = code_list[i + 1] + len(inserted_code_list)
+                new_arg = code_list[i + 1] + len(current_code_list)
                 if new_arg <= MAX_BYTE:
                     code_list[i + 1] = new_arg
                 else:
@@ -100,13 +102,13 @@ def _update_label_offsets(code_obj, offset_of_inserted_code, breakpoint_code_lis
                     pieces_of_code_to_insert.put((i, extended_arg_code))
                     all_inserted_code[i] = len(extended_arg_code)
 
-        code_list = code_list[:current_offset] + inserted_code_list + code_list[current_offset:]
+        code_list = code_list[:current_offset] + current_code_list + code_list[current_offset:]
 
         all_inserted_code_new = dict()
         for offset_inserted in all_inserted_code:
             code_size = all_inserted_code[offset_inserted]
             if current_offset < offset_inserted:
-                all_inserted_code_new[offset_inserted + len(inserted_code_list)] = code_size
+                all_inserted_code_new[offset_inserted + len(current_code_list)] = code_size
             else:
                 all_inserted_code_new[offset_inserted] = code_size
         all_inserted_code = all_inserted_code_new
@@ -115,7 +117,7 @@ def _update_label_offsets(code_obj, offset_of_inserted_code, breakpoint_code_lis
         while not pieces_of_code_to_insert.empty():
             offset_of_code, inserted_code_list = pieces_of_code_to_insert.get()
             if current_offset < offset_of_code:
-                pieces_of_code_to_insert_new.put((offset_of_code + current_offset, inserted_code_list))
+                pieces_of_code_to_insert_new.put((offset_of_code + len(current_code_list), inserted_code_list))
             else:
                 pieces_of_code_to_insert_new.put((offset_of_code, inserted_code_list))
         pieces_of_code_to_insert = pieces_of_code_to_insert_new
