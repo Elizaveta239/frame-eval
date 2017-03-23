@@ -1,6 +1,6 @@
 import dis
 from types import CodeType
-from opcode import opmap, EXTENDED_ARG
+from opcode import opmap, EXTENDED_ARG, HAVE_ARGUMENT
 from queue import Queue
 
 MAX_BYTE = 255
@@ -33,7 +33,7 @@ def _add_attr_values_from_insert_to_original(original_code, insert_code, insert_
     return bytes(code_with_new_values), new_values
 
 
-def _modify_new_lines(code_to_modify, code_insert, offset_of_inserted_code):
+def _modify_new_lines(code_to_modify, all_inserted_code):
     """
     Update new lines in order to hide inserted code inside the original code
     :param code_to_modify: code to modify
@@ -44,11 +44,13 @@ def _modify_new_lines(code_to_modify, code_insert, offset_of_inserted_code):
     new_list = list(code_to_modify.co_lnotab)
     abs_offset = 0
     for i in range(0, len(new_list), 2):
+        prev_abs_offset = abs_offset
         abs_offset += new_list[i]
-        if abs_offset == offset_of_inserted_code and (i + 2) < len(new_list):
-            if new_list[i + 2] + len(code_insert) > MAX_BYTE:
-                raise ValueError("Bad number of arguments")
-            new_list[i + 2] += len(code_insert)
+        for inserted_offset in all_inserted_code:
+            if prev_abs_offset <= inserted_offset < abs_offset:
+                if new_list[i] + all_inserted_code[inserted_offset] > MAX_BYTE:
+                    raise ValueError("Bad number of arguments")
+                new_list[i] += all_inserted_code[inserted_offset]
     return bytes(new_list)
 
 
@@ -60,23 +62,22 @@ def _update_label_offsets(code_obj, offset_of_inserted_code, size_of_inserted_co
     :param offset_of_inserted_code: size of the inserted code
     :return: bytes sequence with modified labels
     """
-    code_to_insert = Queue()
-    code_to_insert.put((offset_of_inserted_code, size_of_inserted_code, 0))
+    pieces_of_code_to_insert = Queue()
+    pieces_of_code_to_insert.put((offset_of_inserted_code, size_of_inserted_code, 0))
+    # During offsets updating one of them can become > max byte value. In this case we need to insert the new operator and
+    # update arguments for relative and absolute jumps again. We will use this queue for saving pieces of code which should be
+    # inserted into the code by turns.
+    all_inserted_code = dict()
+    all_inserted_code[offset_of_inserted_code] = size_of_inserted_code
     original_offset = offset_of_inserted_code
     first = True
+    code_list = list(code_obj)
 
-    while not code_to_insert.empty():
-        offset_of_inserted_code, size_of_inserted_code, insert_argument = code_to_insert.get()
+    while not pieces_of_code_to_insert.empty():
+        offset_of_inserted_code, size_of_inserted_code, insert_argument = pieces_of_code_to_insert.get()
         offsets_for_modification = []
 
-        code_list = list(code_obj)
-        if not first:
-            code_list.insert(offset_of_inserted_code, EXTENDED_ARG)
-            code_list.insert(offset_of_inserted_code + 1, insert_argument)
-        if first:
-            first = False
-
-        for offset, op, arg in dis._unpack_opargs(code_obj):
+        for offset, op, arg in dis._unpack_opargs(code_list):
             if arg is not None:
                 if op in dis.hasjrel:
                     # has relative jump target
@@ -88,25 +89,34 @@ def _update_label_offsets(code_obj, offset_of_inserted_code, size_of_inserted_co
                     # change label for absolute jump if code was inserted before it
                     if offset_of_inserted_code <= arg:
                         offsets_for_modification.append(offset)
-
-        for i in range(0, len(code_obj), 2):
+        for i in range(0, len(code_list), 2):
             op = code_list[i]
             if i in offsets_for_modification and op >= dis.HAVE_ARGUMENT:
-                arg = code_list[i + 1]
-                if arg + size_of_inserted_code <= MAX_BYTE:
-                    code_list[i + 1] += size_of_inserted_code
+                new_arg = code_list[i + 1] + size_of_inserted_code
+                if new_arg <= MAX_BYTE:
+                    code_list[i + 1] = new_arg
                 else:
-                    arg += size_of_inserted_code
-                    code_list[i + 1] = arg & MAX_BYTE
-                    code_to_insert.put((i, 4, arg >> 8))
-                    if original_offset == i + 2:
-                        original_offset += 4
-                    elif original_offset == i:
-                        original_offset -= 4
+                    # if new argument > 255 we need to insert the new operator EXTENDED_ARG
+                    size_of_extended = 2
+                    code_list[i + 1] = new_arg & MAX_BYTE
+                    pieces_of_code_to_insert.put((i, size_of_extended, new_arg >> 8))
+                    if original_offset == i:
+                        original_offset += size_of_inserted_code
+                    for offset_inserted in all_inserted_code:
+                        if offset_inserted >= i:
+                            code_size = all_inserted_code.pop(offset_inserted)
+                            all_inserted_code[offset_inserted + size_of_extended] = code_size
+                    all_inserted_code[i] = size_of_extended
 
-        code_obj = bytes(code_list)
+        if not first:
+            code_list.insert(offset_of_inserted_code, EXTENDED_ARG)
+            code_list.insert(offset_of_inserted_code + 1, insert_argument)
+            if offset_of_inserted_code < original_offset:
+                original_offset += size_of_inserted_code
+        if first:
+            first = False
 
-    return bytes(code_list), original_offset
+    return bytes(code_list), original_offset, all_inserted_code
 
 
 def _return_none_fun():
@@ -123,6 +133,7 @@ def insert_code(code_to_modify, code_to_insert, before_line):
     :param before_line: Number of line for code insertion
     :return: modified code
     """
+    dis.dis(code_to_modify)
     linestarts = dict(dis.findlinestarts(code_to_modify))
     if before_line not in linestarts.values():
         return code_to_modify
@@ -135,20 +146,17 @@ def insert_code(code_to_modify, code_to_insert, before_line):
     code_to_insert_obj = code_to_insert.co_code[:-return_none_size]
     try:
         code_to_insert_obj, new_names = \
-            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_names',
-                                                     dis.hasname)
+            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_names', dis.hasname)
         code_to_insert_obj, new_consts = \
-            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_consts',
-                                                     [opmap['LOAD_CONST']])
+            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_consts', [opmap['LOAD_CONST']])
         code_to_insert_obj, new_vars = \
-            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_varnames',
-                                                     dis.haslocal)
-        modified_code, offset = _update_label_offsets(code_to_modify.co_code, offset, len(code_to_insert_obj))
+            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_varnames', dis.haslocal)
+        modified_code, offset, all_inserted_code = _update_label_offsets(code_to_modify.co_code, offset, len(code_to_insert_obj))
         new_bytes = modified_code[:offset] + code_to_insert_obj + modified_code[offset:]
 
-        new_lnotab = _modify_new_lines(code_to_modify, code_to_insert_obj, offset)
+        new_lnotab = _modify_new_lines(code_to_modify, all_inserted_code)
     except ValueError:
-        return code_to_modify
+        raise
 
     new_code = CodeType(
         code_to_modify.co_argcount,  # integer
@@ -167,4 +175,5 @@ def insert_code(code_to_modify, code_to_insert, before_line):
         code_to_modify.co_freevars,  # tuple
         code_to_modify.co_cellvars  # tuple
     )
-    return new_code
+    dis.dis(new_code)
+    return True, new_code
