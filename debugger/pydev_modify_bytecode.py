@@ -25,11 +25,19 @@ def _add_attr_values_from_insert_to_original(original_code, insert_code, insert_
     insert_value = getattr(insert_code, attribute_name)
     orig_names_len = len(orig_value)
     code_with_new_values = list(insert_code_obj)
-    for offset, op, arg in dis._unpack_opargs(insert_code_obj):
+    offset = 0
+    while offset < len(code_with_new_values):
+        op = code_with_new_values[offset]
         if op in op_list:
-            if code_with_new_values[offset + 1] + orig_names_len > MAX_BYTE:
-                raise ValueError("Bad number of arguments")
-            code_with_new_values[offset + 1] += orig_names_len
+            new_val = code_with_new_values[offset + 1] + orig_names_len
+            if new_val > MAX_BYTE:
+                code_with_new_values[offset + 1] = new_val & MAX_BYTE
+                code_with_new_values = code_with_new_values[:offset] + [EXTENDED_ARG, new_val >> 8] + \
+                    code_with_new_values[offset:]
+                offset += 2
+            else:
+                code_with_new_values[offset + 1] = new_val
+        offset += 2
     new_values = orig_value + insert_value
     return bytes(code_with_new_values), new_values
 
