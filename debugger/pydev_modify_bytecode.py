@@ -1,6 +1,6 @@
 import dis
+import traceback
 from opcode import opmap, EXTENDED_ARG
-from queue import Queue
 from types import CodeType
 
 MAX_BYTE = 255
@@ -18,7 +18,8 @@ def _add_attr_values_from_insert_to_original(original_code, insert_code, insert_
     :param insert_code_obj: bytes sequence of inserted code, which should be modified too
     :param attribute_name: name of attribute to modify ('co_names', 'co_consts' or 'co_varnames')
     :param op_list: sequence of bytecodes whose arguments should be changed
-    :return: modified bytes sequence of the code to insert and new values of the attribute `attribute_name` for original code
+    :return: modified bytes sequence of the code to insert and new values of the attribute `attribute_name` for
+    original code
     """
     orig_value = getattr(original_code, attribute_name)
     insert_value = getattr(insert_code, attribute_name)
@@ -37,22 +38,24 @@ def _modify_new_lines(code_to_modify, all_inserted_code):
     """
     Update new lines in order to hide inserted code inside the original code
     :param code_to_modify: code to modify
-    :param code_insert: code to insert
-    :param offset_of_inserted_code: the offset of the inserted code
+    :param all_inserted_code: list of tuples (offset, list of code instructions) with all inserted pieces of code
     :return: bytes sequence of code with updated lines offsets
     """
     new_list = list(code_to_modify.co_lnotab)
-    abs_offset = 0
-    for i in range(0, len(new_list), 2):
+    abs_offset = prev_abs_offset = 0
+    i = 0
+    while i < len(new_list):
         prev_abs_offset = abs_offset
         abs_offset += new_list[i]
-        for inserted_offset in all_inserted_code:
+        for (inserted_offset, inserted_code) in all_inserted_code:
             if prev_abs_offset <= inserted_offset < abs_offset:
-                if new_list[i] + all_inserted_code[inserted_offset] > MAX_BYTE:
-                    raise ValueError("Bad number of arguments")
-                size_of_inserted = all_inserted_code[inserted_offset]
+                size_of_inserted = len(inserted_code)
                 new_list[i] += size_of_inserted
                 abs_offset += size_of_inserted
+        if new_list[i] > MAX_BYTE:
+            new_list[i] = new_list[i] - MAX_BYTE
+            new_list = new_list[:i] + [MAX_BYTE, 0] + new_list[i:]
+        i += 2
     return bytes(new_list)
 
 
@@ -60,21 +63,19 @@ def _update_label_offsets(code_obj, breakpoint_offset, breakpoint_code_list):
     """
     Update labels for the relative and absolute jump targets
     :param code_obj: code to modify
-    :param offset_of_inserted_code: offset for the inserted code
-    :param offset_of_inserted_code: size of the inserted code
-    :return: bytes sequence with modified labels
+    :param breakpoint_offset: offset for the inserted code
+    :param breakpoint_code_list: size of the inserted code
+    :return: bytes sequence with modified labels; list of tuples (resulting offset, list of code instructions) with
+    information about all inserted pieces of code
     """
-    pieces_of_code_to_insert = Queue()
-    pieces_of_code_to_insert.put((breakpoint_offset, breakpoint_code_list))
-    # During offsets updating one of them can become > max byte value. In this case we need to insert the new operator and
-    # update arguments for relative and absolute jumps again. We will use this queue for saving pieces of code which should be
-    # inserted into the code by turns.
-    all_inserted_code = dict()
-    all_inserted_code[breakpoint_offset] = len(breakpoint_code_list)
+    inserted_code = list()
+    # the list with all inserted pieces of code
+    inserted_code.append((breakpoint_offset, breakpoint_code_list))
     code_list = list(code_obj)
+    j = 0
 
-    while not pieces_of_code_to_insert.empty():
-        current_offset, current_code_list = pieces_of_code_to_insert.get()
+    while j < len(inserted_code):
+        current_offset, current_code_list = inserted_code[j]
         offsets_for_modification = []
 
         for offset, op, arg in dis._unpack_opargs(code_list):
@@ -99,30 +100,17 @@ def _update_label_offsets(code_obj, breakpoint_offset, breakpoint_code_list):
                     # if new argument > 255 we need to insert the new operator EXTENDED_ARG
                     extended_arg_code = [EXTENDED_ARG, new_arg >> 8]
                     code_list[i + 1] = new_arg & MAX_BYTE
-                    pieces_of_code_to_insert.put((i, extended_arg_code))
-                    all_inserted_code[i] = len(extended_arg_code)
+                    inserted_code.append((i, extended_arg_code))
 
         code_list = code_list[:current_offset] + current_code_list + code_list[current_offset:]
 
-        all_inserted_code_new = dict()
-        for offset_inserted in all_inserted_code:
-            code_size = all_inserted_code[offset_inserted]
-            if current_offset < offset_inserted:
-                all_inserted_code_new[offset_inserted + len(current_code_list)] = code_size
-            else:
-                all_inserted_code_new[offset_inserted] = code_size
-        all_inserted_code = all_inserted_code_new
+        for k in range(len(inserted_code)):
+            offset, inserted_code_list = inserted_code[k]
+            if current_offset < offset:
+                inserted_code[k] = (offset + len(current_code_list), inserted_code_list)
+        j += 1
 
-        pieces_of_code_to_insert_new = Queue()
-        while not pieces_of_code_to_insert.empty():
-            offset_of_code, inserted_code_list = pieces_of_code_to_insert.get()
-            if current_offset < offset_of_code:
-                pieces_of_code_to_insert_new.put((offset_of_code + len(current_code_list), inserted_code_list))
-            else:
-                pieces_of_code_to_insert_new.put((offset_of_code, inserted_code_list))
-        pieces_of_code_to_insert = pieces_of_code_to_insert_new
-
-    return bytes(code_list), all_inserted_code
+    return bytes(code_list), inserted_code
 
 
 def _return_none_fun():
@@ -137,9 +125,8 @@ def insert_code(code_to_modify, code_to_insert, before_line):
     :param code_to_modify: Code to modify
     :param code_to_insert: Code to insert
     :param before_line: Number of line for code insertion
-    :return: modified code
+    :return: boolean flag whether insertion was successful, modified code
     """
-    dis.dis(code_to_modify)
     linestarts = dict(dis.findlinestarts(code_to_modify))
     if before_line not in linestarts.values():
         return code_to_modify
@@ -152,16 +139,20 @@ def insert_code(code_to_modify, code_to_insert, before_line):
     code_to_insert_obj = code_to_insert.co_code[:-return_none_size]
     try:
         code_to_insert_obj, new_names = \
-            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_names', dis.hasname)
+            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_names',
+                                                     dis.hasname)
         code_to_insert_obj, new_consts = \
-            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_consts', [opmap['LOAD_CONST']])
+            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_consts',
+                                                     [opmap['LOAD_CONST']])
         code_to_insert_obj, new_vars = \
-            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_varnames', dis.haslocal)
+            _add_attr_values_from_insert_to_original(code_to_modify, code_to_insert, code_to_insert_obj, 'co_varnames',
+                                                     dis.haslocal)
         new_bytes, all_inserted_code = _update_label_offsets(code_to_modify.co_code, offset, list(code_to_insert_obj))
 
         new_lnotab = _modify_new_lines(code_to_modify, all_inserted_code)
     except ValueError:
-        raise
+        traceback.print_exc()
+        return False, code_to_modify
 
     new_code = CodeType(
         code_to_modify.co_argcount,  # integer
@@ -180,5 +171,4 @@ def insert_code(code_to_modify, code_to_insert, before_line):
         code_to_modify.co_freevars,  # tuple
         code_to_modify.co_cellvars  # tuple
     )
-    dis.dis(new_code)
     return True, new_code
