@@ -6,7 +6,7 @@ import time
 filename = os.path.abspath(__file__)
 
 
-# The main performance test from the issue PY-14286
+# The main performance test from the issue https://youtrack.jetbrains.com/issue/PY-14286
 
 
 def foo():

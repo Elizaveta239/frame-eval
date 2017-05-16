@@ -1,4 +1,5 @@
-ignore_list = ['pydev_debug_info.py', 'pydev_modify_bytecode.py', 'pydev_debugger.py', 'dis.py']
+ignore_list = ['pydev_debug_info.py', 'pydev_modify_bytecode.py', 'pydev_debugger.py', 'dis.py', 'threading.py',
+               '_weakrefset.py']
 
 
 class GlobalDebuggerHolder:
