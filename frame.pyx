@@ -1,5 +1,6 @@
 import threading
 
+from debugger.pydev_file_utils import get_abs_path_real_path_and_base_from_frame, NORM_PATHS_AND_BASE_CONTAINER
 from debugger.pydev_modify_bytecode import insert_code
 from debugger.pydev_debugger import get_global_debugger, ignore_list, trace_wrapper, update_globals_dict
 import dis
@@ -10,6 +11,7 @@ NO_BREAKS_IN_FRAME = 1
 class PyDBAdditionalThreadInfo(object):
     def __init__(self):
         self.pydev_state = 1
+        self.is_tracing = False
 
 
 class UseCodeExtraHolder:
@@ -76,9 +78,18 @@ cdef PyObject*get_bytecode_while_frame_eval(PyFrameObject *frame_obj, int exc):
             thread_index = _PyEval_RequestCodeExtraIndex(PyMem_Free)
             UseCodeExtraHolder.local.index = thread_index
 
+        if additional_info.is_tracing:
+            return _PyEval_EvalFrameDefault(frame_obj, exc)
+
+        additional_info.is_tracing = True
+        try:
+            abs_path_real_path_and_base = NORM_PATHS_AND_BASE_CONTAINER[frame.f_code.co_filename]
+        except:
+            abs_path_real_path_and_base = get_abs_path_real_path_and_base_from_frame(frame)
+
         was_break = False
         debugger = get_global_debugger()
-        breakpoints = debugger.get_breakpoints_for_file(filepath)
+        breakpoints = debugger.get_breakpoints_for_file(abs_path_real_path_and_base[1])
         code_object = frame.f_code
         if breakpoints:
             for offset, line in dis.findlinestarts(<object> code_object):
@@ -101,6 +112,8 @@ cdef PyObject*get_bytecode_while_frame_eval(PyFrameObject *frame_obj, int exc):
                 pass
             if thread_index != -1:
                 _PyCode_SetExtra(<PyObject*> code_object, thread_index, extra_value)
+
+        additional_info.is_tracing = False
 
     return _PyEval_EvalFrameDefault(frame_obj, exc)
 

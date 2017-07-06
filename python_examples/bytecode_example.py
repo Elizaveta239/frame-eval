@@ -1,4 +1,4 @@
-import dis_copy as dis
+import dis
 from debugger.pydev_modify_bytecode import insert_code
 from debugger.pydev_debug_info import FrameDebugger
 
@@ -20,7 +20,7 @@ def my_trace():
 
 code = foo.__code__
 code2 = my_trace.__code__
-new_code = insert_code(code, code2, 11)
+success, new_code = insert_code(code, code2, 11)
 
 print("New code:")
 dis.dis(new_code)
